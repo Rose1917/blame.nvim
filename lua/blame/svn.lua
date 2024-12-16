@@ -1,9 +1,12 @@
----@class Git
----@field config Config
-local Git = {}
+local common = require('blame.common')
 
----@return Git
-function Git:new(config)
+
+---@class Svn
+---@field config Config
+local SVN = {}
+
+---@return SVN
+function SVN:new(config)
     local o = {}
     setmetatable(o, { __index = self })
 
@@ -44,30 +47,37 @@ local function add_blame_options(blame_command, blame_options)
     end
 end
 
----Execute git blame line porcelain command, returns output string
----@param filename string
----@param cwd any cwd where to execute the command
----@param commit string|nil
+---Execute svn blame command, returns output string
+---@param filename string the file to blame
+---@param cwd any the working directory where the command will be executed
+---@param revision string|nil the specific revision to blame
 ---@param callback fun(data: string[]) callback on exiting the command with output string
-function Git:blame(filename, cwd, commit, callback, err_cb)
+---@param err_cb fun(error: string) callback in case of an error
+function SVN:blame(filename, cwd, revision, callback, err_cb)
     local blame_command = {
-        "git",
-        "--no-pager",
+        "svn",
         "blame",
-        "--line-porcelain",
-        filename,
+        "-x",
+        "--ignore-eol-style",
+        "--force",
+        "--xml",  -- Output blame in XML format for structured parsing
     }
 
-
     add_blame_options(blame_command, self.config.blame_options)
-    if commit ~= nil then
-        table.insert(blame_command, #blame_command - 1, commit)
+
+    if revision ~= nil then
+        table.insert(blame_command, "-r")
+        table.insert(blame_command, revision)
     end
+
+    table.insert(blame_command, filename)
+
+    -- Execute the command
     execute_command(blame_command, cwd, callback, err_cb)
 end
 
-function Git:git_root(cwd, callback, err_cb)
-    local rev_parse_command = { "git", "rev-parse", "--show-toplevel" }
+function SVN:svn_root(cwd, callback, err_cb)
+    local rev_parse_command = { "svn", "info", "--xml" }
     execute_command(rev_parse_command, cwd, callback, err_cb)
 end
 
@@ -76,12 +86,13 @@ end
 ---@param cwd any cwd where to execute the command
 ---@param commit string
 ---@param callback fun(data: string[]) callback on exiting the command with output string
-function Git:show(file_path, cwd, commit, callback, err_cb)
-    local show_command = { "git", "--no-pager", "show" }
+function SVN:show(file_path, cwd, commit, callback, err_cb)
+    local show_command = { "svn", "cat", "-r" }
 
     if file_path then
         -- show_command = show_command .. ":" .. file_path
-        table.insert(show_command, commit .. ":" .. file_path)
+        table.insert(show_command, commit)
+        table.insert(show_command, file_path)
         execute_command(show_command, cwd, callback, err_cb)
     else
         table.insert(show_command, commit)
@@ -89,4 +100,5 @@ function Git:show(file_path, cwd, commit, callback, err_cb)
     end
 end
 
-return Git
+SVN.working_copy = _G.WORKING_COPY_SVN
+return SVN

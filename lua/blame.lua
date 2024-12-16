@@ -1,4 +1,6 @@
 local git = require("blame.git")
+local svn = require("blame.svn")
+local common = require("blame.common")
 local window_view = require("blame.views.window_view")
 local porcelain_parser = require("blame.porcelain_parser")
 local virtual_view = require("blame.views.virtual_view")
@@ -55,26 +57,65 @@ local config = {
     },
 }
 
----@param blame_view BlameView
-local function open(blame_view)
-    local filename = vim.api.nvim_buf_get_name(0)
-    local cwd = vim.fn.expand("%:p:h")
-    local g = git:new(config)
-    g:blame(filename, cwd, nil, function(data)
-        vim.schedule(function()
-            local parsed_blames = porcelain_parser.parse_porcelain(data)
-            blame_view:open(parsed_blames)
-        end)
-    end, function(err)
-        vim.notify(err, vim.log.levels.INFO)
-    end)
-end
 
 ---@class Blame
 ---@field last_opened_view nil | BlameView
 local M = {
     last_opened_view = nil,
 }
+
+---check if current buffer is under a git or svn vcs
+local function check_vcs()
+    local git_root = vim.fn.systemlist("git rev-parse --show-toplevel 2>/dev/null")
+    if vim.v.shell_error == 0 then
+        return _G.WORKING_COPY_GIT, git_root[1] -- The current file is under a Git repository
+    end
+
+    local svn_info = vim.fn.systemlist("svn info 2>/dev/null")
+    if vim.v.shell_error == 0 then
+        return _G.WORKING_COPY_SVN, nil -- The current file is under an SVN repository
+    end
+
+    return nil, nil -- Not under any version control system
+end
+
+---@param blame_view BlameView
+local function open(blame_view)
+    local filename = vim.api.nvim_buf_get_name(0)
+    local cwd = vim.fn.expand("%:p:h")
+    if M.vcs == _G.WORKING_COPY_GIT then
+        local g = git:new(config)
+        g:blame(filename, cwd, nil,
+            function(data)
+                vim.schedule(function()
+                    local parsed_blames = porcelain_parser.parse_porcelain(data, _G.WORKING_COPY_GIT)
+                    blame_view:open(parsed_blames)
+                end)
+            end, 
+            function(err)
+                vim.notify(err, vim.log.levels.INFO)
+            end
+        )
+        return 
+    end
+
+    if M.vcs == _G.WORKING_COPY_SVN then
+        local svn = svn:new(config)
+        svn:blame(filename, cwd, nil,
+            function(data)
+                vim.schedule(function()
+                    local parsed_blames = porcelain_parser.parse_porcelain(data, _G.WORKING_COPY_SVN)
+                    blame_view:open(parsed_blames)
+                end)
+            end, 
+            function(err)
+                vim.notify(err, vim.log.levels.INFO)
+            end
+        )
+        return 
+    end
+end
+
 
 ---@return boolean | nil
 M.is_open = function()
@@ -83,6 +124,18 @@ end
 
 ---@param setup_args Config | nil
 M.setup = function(setup_args)
+
+    local vcs, _ = check_vcs()
+    if not vcs then 
+        -- vim.notify("not under any vcs system", vim.log.levels.INFO)
+        return 
+    end
+
+    ---@field vcs number identify it is under which version control system
+    M.vcs = vcs
+
+    -- vim.notify("vcs:"..vcs, vim.log.levels.INFO)
+
     config = vim.tbl_deep_extend("force", config, setup_args or {})
 
     local blame_view = config.views.default:new(config)

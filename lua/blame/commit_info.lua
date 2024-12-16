@@ -25,6 +25,7 @@ function CommitInfo:close(cleanup)
     then
         vim.api.nvim_win_close(self.commit_info_window, true)
     end
+
     self.commit_info_window = nil
 end
 
