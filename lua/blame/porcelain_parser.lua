@@ -1,5 +1,4 @@
 local common = require('blame.common')
-local xml = require("pl.xml")
 local util = require('blame.utils')
 local M = {}
 
