@@ -9,7 +9,6 @@ local SVN = {}
 function SVN:new(config)
     local o = {}
     setmetatable(o, { __index = self })
-
     o.config = config
     return o
 end
@@ -31,6 +30,7 @@ local function execute_command(command, cwd, callback, err_cb)
         on_stdout = function(_, d)
             data = d
         end,
+
         stdout_buffered = true,
         stderr_buffered = true,
     })
@@ -60,7 +60,7 @@ function SVN:blame(filename, cwd, revision, callback, err_cb)
         "-x",
         "--ignore-eol-style",
         "--force",
-        "--xml",  -- Output blame in XML format for structured parsing
+        "-v",
     }
 
     add_blame_options(blame_command, self.config.blame_options)

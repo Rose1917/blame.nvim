@@ -1,5 +1,6 @@
 local common = require('blame.common')
 local xml = require("pl.xml")
+local util = require('blame.utils')
 local M = {}
 
 ---@class Porcelain
@@ -23,11 +24,29 @@ local M = {}
 M.parse_porcelain = function(blame_porcelain, vcs)
 
     local all_lines = {}
+
     if vcs == _G.WORKING_COPY_GIT then
+        --[[
+        dc5db56796ee593423e93d234f64850e922808da 6 6
+        author pedroren
+        author-mail <pedroren@tencent.com>
+        author-time 1729733821
+        author-tz +0800
+        committer pedroren
+        committer-mail <pedroren@tencent.com>
+        committer-time 1729733821
+        committer-tz +0800
+        summary init
+        boundary
+        filename src/cli.rs
+            #[derive(Debug, Clone, Copy)]
+        ]]
         for _, entry in ipairs(blame_porcelain) do
             local ident = entry:match("^%S+")
+            -- vim.notify(entry, vim.log.levels.ERROR)
             if not ident then
                 all_lines[#all_lines].content = entry
+                -- vim.notify('not ident'..entry, vim.log.levels.INFO)
             elseif #ident == 40 then
                 table.insert(all_lines, { hash = ident })
             else
@@ -45,37 +64,29 @@ M.parse_porcelain = function(blame_porcelain, vcs)
 
     if vcs == _G.WORKING_COPY_SVN then
         -- Parse SVN blame XML output
-        vim.notify(type(blame_porcelain), vim.log.levels.INFO)
-        vim.notify(blame_porcelain[1], vim.log.levels.INFO)
+        local line_num = 1
+        for _, entry in ipairs(blame_porcelain) do
+            local pattern = "(%d+)%s+(%S+)%s+([%d%-]+%s+[%d:]+)%s+[%+%-]%d+%s+%([^%)]+%)%s*(.*)"
+            local hash, author, date, content = entry:match(pattern)
+            local date_stamp
 
-        template = [[
-            <entry
-               line-number="16795">
-            <commit
-               revision="490193">
-            <author>grantliao</author>
-            <date>2024-09-29T07:24:04.714887Z</date>
-            </commit>
-            </entry> 
-        ]]
-
-        local blame_xml = xml.parse(table.concat(blame_porcelain, '\n'))
-        for _, entry in ipairs(blame_xml:get_elements_with_name("entry")) do
-
-            local commit = entry:child_with_name('commit')
-            local author = commit:child_with_name('author')
-            local date   = commit:child_with_name('date')
+            if hash == nil then
+                hash = '0000000000000000000000000000000000000000'
+                author = 'Not Committed Yet'
+                date_stamp = os.time()
+            else 
+                date_stamp = util.pattern_to_stamp("(%d+)%-(%d+)%-(%d+) (%d+):(%d+):(%d+)", date)
+            end
 
             local line_info = {
-                line_number = entry.attr['line-number'],
-                hash = commit.attr['revision'],
-                author = author:get_text(),
-                date = date:get_text(),
+                line_number = line_num,
+                hash = hash,
+                author = author,
+                committer_time = date_stamp,
+                author_time = date_stamp,
             }
-
-            vim.notify(string.format("hash=%s, author=%s, content=, author_time=%s", 
-                line_info.hash, line_info.author, line_info.author_time), vim.log.levels.INFO)
             table.insert(all_lines, line_info)
+            line_num = line_num + 1
         end
     end
     return all_lines
